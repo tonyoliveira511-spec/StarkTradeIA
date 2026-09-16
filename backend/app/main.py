@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.ai.entry_engine import compute_entry, pick_entry_extraction
 from app.ai.technical_consolidation import build_sub_scores, suggest_expiry
 from app.ai.vision_analysis import ImageAnalysisProvider, VisionAnalysisError, VisionExtraction
 from app.core.config import get_settings
@@ -70,8 +72,7 @@ async def analyze(
     except VisionAnalysisError as e:
         raise HTTPException(503, str(e))
 
-    extractions: list[VisionExtraction] = []
-    for image, timeframe_label in zip(images, timeframes):
+    async def analyze_one(image: UploadFile, timeframe_label: str) -> VisionExtraction:
         if image.content_type not in ALLOWED_MEDIA_TYPES:
             raise HTTPException(400, f"Tipo de imagem não suportado: {image.content_type}")
 
@@ -80,7 +81,7 @@ async def analyze(
             raise HTTPException(400, f"Imagem '{image.filename}' excede {MAX_IMAGE_BYTES // 1024 // 1024}MB.")
 
         try:
-            extraction = await provider.analyze_screenshot(
+            return await provider.analyze_screenshot(
                 image_bytes=image_bytes,
                 media_type=image.content_type,
                 timeframe_label=timeframe_label,
@@ -93,7 +94,12 @@ async def analyze(
             # nenhum momento foi escrito em disco ou enviado a storage.
             del image_bytes
 
-        extractions.append(extraction)
+    # Chamadas em paralelo — cada imagem já demora alguns segundos na Vision
+    # AI; com 1 imagem não muda nada, mas com 2-3 evita esperar em série
+    # (era a causa da lentidão percebida pelo usuário com o modo multi-timeframe).
+    extractions: list[VisionExtraction] = await asyncio.gather(
+        *(analyze_one(image, tf) for image, tf in zip(images, timeframes))
+    )
 
     sub_scores, availability = build_sub_scores(extractions)
 
@@ -102,6 +108,11 @@ async def analyze(
 
     expiry_minutes, expiry_reason = suggest_expiry(sub_scores, availability)
 
+    entry = None
+    if signal.direction != Direction.WAIT:
+        entry_extraction = pick_entry_extraction(extractions)
+        entry = compute_entry(signal.direction, entry_extraction)
+
     return {
         "direction": signal.direction.value,
         "score": round(signal.confidence, 1),
@@ -109,6 +120,16 @@ async def analyze(
         "expiry_suggestion_minutes": expiry_minutes if signal.direction != Direction.WAIT else None,
         "expiry_reason": expiry_reason,
         "data_availability": round(availability * 100, 1),
+        "entry": (
+            {
+                "zone_low": entry.zone_low,
+                "zone_high": entry.zone_high,
+                "confirmation": entry.confirmation,
+                "invalidation": entry.invalidation,
+            }
+            if entry
+            else None
+        ),
         "extractions": [
             {
                 "timeframe_label": e.timeframe_label,

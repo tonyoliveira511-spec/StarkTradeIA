@@ -9,30 +9,35 @@ export interface SignalData {
   confidence: number; // 0-100
   entryZoneLow?: number;
   entryZoneHigh?: number;
+  confirmation?: string;
+  invalidation?: string;
   expiryMinutes?: number;
   reasons: string[];
 }
 
 const DIRECTION_CONFIG: Record<
   Direction,
-  { label: string; textClass: string; barClass: string; glowClass: string }
+  { label: string; textClass: string; barClass: string; tintClass: string; glowClass: string }
 > = {
   CALL: {
     label: "Comprar",
     textClass: "text-call",
     barClass: "bg-call",
+    tintClass: "bg-call/10 border border-call/30",
     glowClass: "shadow-[0_0_40px_-12px_rgba(47,158,104,0.5)]",
   },
   PUT: {
     label: "Vender",
     textClass: "text-put",
     barClass: "bg-put",
+    tintClass: "bg-put/10 border border-put/30",
     glowClass: "shadow-[0_0_40px_-12px_rgba(193,68,60,0.5)]",
   },
   AGUARDAR: {
     label: "Sem confluência suficiente",
     textClass: "text-wait",
     barClass: "bg-wait",
+    tintClass: "bg-wait/10 border border-wait/30",
     glowClass: "shadow-[0_0_40px_-12px_rgba(217,164,65,0.4)]",
   },
 };
@@ -71,20 +76,42 @@ export function SignalPanel({ signal }: { signal: SignalData }) {
           </div>
         </div>
 
-        {signal.direction !== "AGUARDAR" && (
-          <div className="grid grid-cols-2 gap-4 mb-5 pt-4 border-t border-panelBorder">
-            {signal.entryZoneLow !== undefined && signal.entryZoneHigh !== undefined && (
+        {signal.direction !== "AGUARDAR" && signal.entryZoneLow !== undefined && signal.entryZoneHigh !== undefined && (
+          <div className={clsx("rounded-sm px-4 py-3 mb-5", config.tintClass)}>
+            <span className="text-[11px] uppercase tracking-wide text-ash block mb-1">
+              Zona de entrada
+            </span>
+            <span className="font-data text-xl text-paper block">
+              {signal.entryZoneLow === signal.entryZoneHigh
+                ? signal.entryZoneLow.toFixed(5)
+                : `${signal.entryZoneLow.toFixed(5)} – ${signal.entryZoneHigh.toFixed(5)}`}
+            </span>
+          </div>
+        )}
+
+        {signal.direction !== "AGUARDAR" && signal.expiryMinutes !== undefined && (
+          <div className="mb-5">
+            <span className="text-xs text-ash block mb-0.5">Expiração sugerida</span>
+            <span className="font-data text-sm text-paper">{signal.expiryMinutes} min</span>
+          </div>
+        )}
+
+        {(signal.confirmation || signal.invalidation) && (
+          <div className="grid grid-cols-1 gap-3 mb-5 pt-4 border-t border-panelBorder">
+            {signal.confirmation && (
               <div>
-                <span className="text-xs text-ash block mb-0.5">Zona de entrada</span>
-                <span className="font-data text-sm text-paper">
-                  {signal.entryZoneLow.toFixed(5)}–{signal.entryZoneHigh.toFixed(5)}
+                <span className="text-[11px] uppercase tracking-wide text-call block mb-1">
+                  Confirmar antes de entrar
                 </span>
+                <span className="text-sm text-paper leading-relaxed">{signal.confirmation}</span>
               </div>
             )}
-            {signal.expiryMinutes !== undefined && (
+            {signal.invalidation && (
               <div>
-                <span className="text-xs text-ash block mb-0.5">Expiração sugerida</span>
-                <span className="font-data text-sm text-paper">{signal.expiryMinutes} min</span>
+                <span className="text-[11px] uppercase tracking-wide text-put block mb-1">
+                  Invalidado se
+                </span>
+                <span className="text-sm text-paper leading-relaxed">{signal.invalidation}</span>
               </div>
             )}
           </div>

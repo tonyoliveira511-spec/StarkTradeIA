@@ -27,6 +27,13 @@ interface ExtractionResult {
   notes: string;
 }
 
+interface EntryInfo {
+  zone_low: number;
+  zone_high: number;
+  confirmation: string;
+  invalidation: string;
+}
+
 interface AnalyzeResponse {
   direction: "CALL" | "PUT" | "AGUARDAR";
   score: number;
@@ -34,6 +41,7 @@ interface AnalyzeResponse {
   expiry_suggestion_minutes: number | null;
   expiry_reason: string;
   data_availability: number;
+  entry: EntryInfo | null;
   extractions: ExtractionResult[];
 }
 
@@ -55,9 +63,12 @@ export default function DashboardPage() {
     if (!fileList || fileList.length === 0) return;
     const remaining = MAX_IMAGES - slots.length;
     const filesToAdd = Array.from(fileList).slice(0, remaining);
-    const newSlots: ImageSlot[] = filesToAdd.map((file) => ({
+    const newSlots: ImageSlot[] = filesToAdd.map((file, i) => ({
       file,
-      timeframe: "",
+      // Fluxo rápido: a primeira imagem já vem com "15m" preenchido, já
+      // que é o timeframe mais comum para uma leitura de entrada única.
+      // Timeframes seguintes (estrutura/entrada) ficam em branco de propósito.
+      timeframe: slots.length === 0 && i === 0 ? "15m" : "",
       previewUrl: URL.createObjectURL(file),
     }));
     setSlots((prev) => [...prev, ...newSlots]);
@@ -116,6 +127,10 @@ export default function DashboardPage() {
     ? {
         direction: result.direction,
         confidence: result.score,
+        entryZoneLow: result.entry?.zone_low,
+        entryZoneHigh: result.entry?.zone_high,
+        confirmation: result.entry?.confirmation,
+        invalidation: result.entry?.invalidation,
         expiryMinutes: result.expiry_suggestion_minutes ?? undefined,
         reasons: [...result.reasons, result.expiry_reason],
       }
@@ -142,9 +157,9 @@ export default function DashboardPage() {
         <section>
           <h2 className="font-display text-sm font-medium text-paper mb-1">Gráficos</h2>
           <p className="text-xs text-ashDim mb-4 leading-relaxed">
-            Envie de 1 a 3 imagens. Com três, a leitura combina contexto (ex. 15m),
-            estrutura (5m) e entrada (1m). As imagens não são salvas — existem só
-            durante esta análise.
+            Envie 1 imagem (15m já preenchido) para uma leitura rápida, ou até
+            3 para combinar contexto, estrutura e entrada. As imagens não são
+            salvas — existem só durante esta análise.
           </p>
 
           <div className="space-y-3">
