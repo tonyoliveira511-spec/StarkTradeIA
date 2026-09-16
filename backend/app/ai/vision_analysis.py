@@ -124,20 +124,30 @@ class VisionAnalysisError(RuntimeError):
     pass
 
 
-def _normalize_image(image_bytes: bytes) -> bytes:
-    """Reabre a imagem e reexporta como PNG RGB puro.
+MAX_IMAGE_DIMENSION = 1568  # suficiente para ler candles/indicadores; reduz payload e custo
 
-    Corrige a causa mais comum do erro genérico "Unable to process input
-    image" da API do Gemini: perfis de cor não-RGB (CMYK), canal alpha
-    incomum, metadados EXIF/ICC embutidos por certas ferramentas de
-    captura de tela, ou variações de WebP que a API não decodifica bem.
-    Reexportar como PNG RGB elimina essas variações antes de enviar.
+
+def _normalize_image(image_bytes: bytes) -> bytes:
+    """Reabre a imagem, redimensiona se necessário, e reexporta como PNG RGB puro.
+
+    Corrige duas causas prováveis do erro genérico "Unable to process
+    input image" da API do Gemini:
+    1. Perfis de cor não-RGB (CMYK), canal alpha incomum, metadados
+       EXIF/ICC embutidos por certas ferramentas de captura de tela.
+    2. Imagens muito grandes (screenshots em alta resolução podem passar
+       de vários MB) — a API tem limite prático de tamanho para imagem
+       inline, e excedê-lo às vezes retorna esse erro genérico em vez de
+       uma mensagem clara de "imagem grande demais".
     """
     try:
         with Image.open(io.BytesIO(image_bytes)) as img:
             rgb_img = img.convert("RGB")
+
+            if max(rgb_img.size) > MAX_IMAGE_DIMENSION:
+                rgb_img.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.LANCZOS)
+
             buffer = io.BytesIO()
-            rgb_img.save(buffer, format="PNG")
+            rgb_img.save(buffer, format="PNG", optimize=True)
             return buffer.getvalue()
     except Exception as e:
         raise VisionAnalysisError(
@@ -164,6 +174,10 @@ class ImageAnalysisProvider:
         lugar antes ou depois desta chamada.
         """
         normalized_bytes = _normalize_image(image_bytes)
+        logger.info(
+            "Enviando imagem ao Gemini: %d bytes originais -> %d bytes normalizados (timeframe=%s)",
+            len(image_bytes), len(normalized_bytes), timeframe_label,
+        )
 
         try:
             response = await self._client.aio.models.generate_content(
