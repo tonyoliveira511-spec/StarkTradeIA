@@ -95,3 +95,29 @@ modelo Vision de ler os elementos visuais corretamente (velas, indicadores
 plotados, zonas de preço). Isso não foi validado contra screenshots reais
 da Quotex ainda — validar com casos reais é o próximo passo lógico antes
 de confiar no sinal para qualquer decisão.
+
+## Atualização — Vision AI trocada de Claude para Gemini
+
+Motivo: reduzir custo operacional na fase de validação do MVP. O Google
+AI Studio oferece free tier permanente (sem cartão, sem expiração) para o
+Gemini 2.5 Flash, incluindo entrada multimodal (imagem) sem custo
+adicional, dentro de limites diários generosos (na casa de milhares de
+requisições/dia em Setembro de 2026).
+
+Trade-off documentado: no free tier do Google, prompts e respostas podem
+ser usados para melhorar os produtos do Google (diferente do uso pago,
+que tem garantias mais fortes de privacidade). Para screenshots de gráfico
+(sem dado pessoal do usuário) isso é um risco baixo, mas fica registrado
+aqui para o caso de o uso mudar no futuro.
+
+Mudança de implementação:
+- `app/ai/vision_analysis.py`: usa `google-genai` (`from google import genai`)
+  em vez de `anthropic`. Usa `response_schema` estrito (tipo `OBJECT` com
+  enum para os campos categóricos) em vez de confiar só no texto do
+  prompt para forçar o formato JSON — mais robusto.
+- Variável de ambiente: `GEMINI_API_KEY` (gerada em aistudio.google.com/apikey)
+  substitui `ANTHROPIC_API_KEY`.
+- A interface pública (`ImageAnalysisProvider.analyze_screenshot`) não
+  mudou — o resto do sistema (`technical_consolidation.py`, `main.py`)
+  não precisou de nenhuma alteração além de trocar o nome da variável de
+  configuração.

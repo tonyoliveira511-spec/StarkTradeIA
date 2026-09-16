@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Nunca commitar valores reais — preencher via .env local ou secret
     # manager do ambiente de deploy (nunca no código-fonte).
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
 
     # Quotex — não usada nesta fase (MVP via screenshot). Mantida na
     # config para quando a integração em tempo real for retomada (ver

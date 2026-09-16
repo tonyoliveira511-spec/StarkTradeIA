@@ -1,6 +1,6 @@
 """
 ImageAnalysisProvider — extrai dados estruturados de um screenshot de
-gráfico usando um modelo multimodal (Claude Vision).
+gráfico usando o Gemini (Google), aproveitando o free tier multimodal.
 
 REGRA CENTRAL (item 3 do briefing): a IA NUNCA inventa um valor que não
 está visível na imagem. Para qualquer campo que não possa ser determinado
@@ -9,25 +9,31 @@ responder exatamente "NÃO DISPONÍVEL" — e este módulo trata essa string
 como ausência de dado, nunca como um valor a ser usado em cálculo.
 
 As imagens NUNCA são persistidas: chegam como bytes em memória, são
-enviadas para a API da Anthropic dentro da própria requisição, e são
-descartadas assim que a função retorna. Nenhum arquivo é escrito em disco
-e nenhuma linha deste módulo grava a imagem em armazenamento permanente.
+enviadas para a API do Gemini dentro da própria requisição, e são
+descartadas assim que a função retorna. Nenhum arquivo é escrito em disco.
+
+Usa response_mime_type="application/json" com um response_schema
+explícito — o Gemini valida a estrutura antes de devolver, o que é mais
+confiável do que só pedir "responda em JSON" no texto do prompt.
 """
 from __future__ import annotations
 
-import base64
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
-from anthropic import AsyncAnthropic
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger("vision_analysis")
 
 NOT_AVAILABLE = "NÃO DISPONÍVEL"
 
-VISION_MODEL = "claude-sonnet-4-5"
+# Gemini 2.5 Flash: modelo multimodal disponível no free tier do Google
+# AI Studio (sem cartão de crédito, sem expiração — ver docs/ARCHITECTURE.md
+# para a comparação de custo que motivou essa escolha).
+VISION_MODEL = "gemini-2.5-flash"
 
 EXTRACTION_PROMPT = """\
 Você é um analista técnico extraindo dados de um screenshot de gráfico de \
@@ -39,27 +45,41 @@ determinado com confiança a partir do que está desenhado no gráfico, \
 retorne exatamente a string "NÃO DISPONÍVEL" para aquele campo — nunca um \
 número ou classificação inventados.
 
-Responda SOMENTE com um JSON válido (sem markdown, sem texto antes ou \
-depois), no formato exato abaixo:
-
-{
-  "asset": "string ou NÃO DISPONÍVEL",
-  "timeframe": "string ou NÃO DISPONÍVEL",
-  "current_price": "número como string ou NÃO DISPONÍVEL",
-  "trend": "FORTE_ALTA | ALTA | LATERAL | BAIXA | FORTE_BAIXA | NÃO DISPONÍVEL",
-  "structure_sequence": "sequência como 'HH,HL,LH,LL' na ordem observada, ou NÃO DISPONÍVEL",
-  "support_zone": "faixa de preço como string, ou NÃO DISPONÍVEL",
-  "resistance_zone": "faixa de preço como string, ou NÃO DISPONÍVEL",
-  "momentum": "COMPRADORA | VENDEDORA | NEUTRA | NÃO DISPONÍVEL",
-  "rsi_reading": "valor visível do RSI (se o indicador estiver plotado), ou NÃO DISPONÍVEL",
-  "macd_reading": "descrição do estado do MACD se visível (ex: 'cruzamento de alta'), ou NÃO DISPONÍVEL",
-  "bollinger_reading": "descrição se as bandas de Bollinger estiverem visíveis (ex: 'squeeze', 'expansão', 'preço tocando banda superior'), ou NÃO DISPONÍVEL",
-  "price_action_pattern": "padrão de candle relevante visível (ex: 'engulfing de baixa', 'pin bar'), ou NÃO DISPONÍVEL",
-  "notes": "observações adicionais relevantes em texto livre, ou NÃO DISPONÍVEL"
-}
-
-Analise a imagem a seguir:
+Analise a imagem a seguir e preencha os campos do schema fornecido.
 """
+
+# Schema estrito: o Gemini é forçado a preencher exatamente estes campos,
+# todos como string (para permitir o valor sentinela "NÃO DISPONÍVEL"
+# mesmo em campos conceitualmente numéricos, como current_price/rsi_reading).
+RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "asset": {"type": "STRING"},
+        "timeframe": {"type": "STRING"},
+        "current_price": {"type": "STRING"},
+        "trend": {
+            "type": "STRING",
+            "enum": ["FORTE_ALTA", "ALTA", "LATERAL", "BAIXA", "FORTE_BAIXA", NOT_AVAILABLE],
+        },
+        "structure_sequence": {"type": "STRING"},
+        "support_zone": {"type": "STRING"},
+        "resistance_zone": {"type": "STRING"},
+        "momentum": {
+            "type": "STRING",
+            "enum": ["COMPRADORA", "VENDEDORA", "NEUTRA", NOT_AVAILABLE],
+        },
+        "rsi_reading": {"type": "STRING"},
+        "macd_reading": {"type": "STRING"},
+        "bollinger_reading": {"type": "STRING"},
+        "price_action_pattern": {"type": "STRING"},
+        "notes": {"type": "STRING"},
+    },
+    "required": [
+        "asset", "timeframe", "current_price", "trend", "structure_sequence",
+        "support_zone", "resistance_zone", "momentum", "rsi_reading",
+        "macd_reading", "bollinger_reading", "price_action_pattern", "notes",
+    ],
+}
 
 
 @dataclass(frozen=True)
@@ -107,8 +127,8 @@ class ImageAnalysisProvider:
 
     def __init__(self, api_key: str):
         if not api_key:
-            raise VisionAnalysisError("ANTHROPIC_API_KEY não configurada no servidor.")
-        self._client = AsyncAnthropic(api_key=api_key)
+            raise VisionAnalysisError("GEMINI_API_KEY não configurada no servidor.")
+        self._client = genai.Client(api_key=api_key)
 
     async def analyze_screenshot(
         self, image_bytes: bytes, media_type: str, timeframe_label: str
@@ -118,40 +138,31 @@ class ImageAnalysisProvider:
         A imagem só existe neste escopo de função — não é salva em nenhum
         lugar antes ou depois desta chamada.
         """
-        image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+        try:
+            response = await self._client.aio.models.generate_content(
+                model=VISION_MODEL,
+                contents=[
+                    EXTRACTION_PROMPT,
+                    types.Part.from_bytes(data=image_bytes, mime_type=media_type),
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=RESPONSE_SCHEMA,
+                ),
+            )
+        except Exception as e:
+            logger.error("Falha ao chamar a API do Gemini: %s", e)
+            raise VisionAnalysisError(f"Falha ao chamar a API do Gemini: {e}") from e
 
-        response = await self._client.messages.create(
-            model=VISION_MODEL,
-            max_tokens=1024,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_b64,
-                            },
-                        },
-                        {"type": "text", "text": EXTRACTION_PROMPT},
-                    ],
-                }
-            ],
-        )
-
-        raw_text = "".join(
-            block.text for block in response.content if block.type == "text"
-        ).strip()
+        raw_text = (response.text or "").strip()
+        if not raw_text:
+            raise VisionAnalysisError("O Gemini retornou uma resposta vazia.")
 
         try:
             data = json.loads(raw_text)
         except json.JSONDecodeError as e:
             logger.error("Resposta do modelo não é JSON válido: %s", raw_text[:300])
-            raise VisionAnalysisError(
-                f"O modelo não retornou JSON válido: {e}"
-            ) from e
+            raise VisionAnalysisError(f"O modelo não retornou JSON válido: {e}") from e
 
         def get_field(key: str) -> str:
             value = data.get(key, NOT_AVAILABLE)

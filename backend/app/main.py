@@ -39,7 +39,7 @@ ALLOWED_MEDIA_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 
 def get_vision_provider() -> ImageAnalysisProvider:
-    return ImageAnalysisProvider(api_key=settings.anthropic_api_key)
+    return ImageAnalysisProvider(api_key=settings.gemini_api_key)
 
 
 @app.get("/health")
