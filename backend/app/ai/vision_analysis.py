@@ -18,6 +18,7 @@ confiável do que só pedir "responda em JSON" no texto do prompt.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -161,6 +162,34 @@ class ImageAnalysisProvider:
             raise VisionAnalysisError("GEMINI_API_KEY não configurada no servidor.")
         self._client = genai.Client(api_key=api_key)
 
+    async def _call_with_retry(self, image_bytes: bytes, max_attempts: int = 3):
+        """Chama o Gemini com retry apenas para 503 (sobrecarga temporária
+        do modelo) — comum no free tier em horários de pico. Outros erros
+        (400, 403, 404 etc.) não são retentados, pois são falhas
+        permanentes que uma nova tentativa não resolve."""
+        last_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self._client.aio.models.generate_content(
+                    model=VISION_MODEL,
+                    contents=[
+                        EXTRACTION_PROMPT,
+                        types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                    ],
+                )
+            except Exception as e:
+                is_overloaded = "503" in str(e) or "UNAVAILABLE" in str(e)
+                if not is_overloaded or attempt == max_attempts:
+                    raise
+                wait_seconds = 2 ** attempt  # 2s, 4s, 8s...
+                logger.warning(
+                    "Gemini sobrecarregado (tentativa %d/%d), aguardando %ds: %s",
+                    attempt, max_attempts, wait_seconds, e,
+                )
+                last_error = e
+                await asyncio.sleep(wait_seconds)
+        raise last_error  # pragma: no cover — inalcançável, guarda de tipo
+
     async def analyze_screenshot(
         self, image_bytes: bytes, media_type: str, timeframe_label: str
     ) -> VisionExtraction:
@@ -176,13 +205,7 @@ class ImageAnalysisProvider:
         )
 
         try:
-            response = await self._client.aio.models.generate_content(
-                model=VISION_MODEL,
-                contents=[
-                    EXTRACTION_PROMPT,
-                    types.Part.from_bytes(data=normalized_bytes, mime_type="image/png"),
-                ],
-            )
+            response = await self._call_with_retry(normalized_bytes)
         except Exception as e:
             logger.error("Falha ao chamar a API do Gemini: %s", e)
             raise VisionAnalysisError(f"Falha ao chamar a API do Gemini: {e}") from e
