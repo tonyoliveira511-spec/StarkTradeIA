@@ -125,6 +125,12 @@ def _normalize_image(image_bytes: bytes) -> bytes:
        inline, e excedê-lo às vezes retorna esse erro genérico em vez de
        uma mensagem clara de "imagem grande demais".
     """
+    if not image_bytes:
+        raise VisionAnalysisError(
+            "A imagem chegou vazia no servidor (0 bytes) — provavelmente um "
+            "problema no envio do arquivo pelo frontend."
+        )
+
     try:
         with Image.open(io.BytesIO(image_bytes)) as img:
             rgb_img = img.convert("RGB")
@@ -136,8 +142,12 @@ def _normalize_image(image_bytes: bytes) -> bytes:
             rgb_img.save(buffer, format="PNG", optimize=True)
             return buffer.getvalue()
     except Exception as e:
+        # Inclui os primeiros bytes (assinatura/magic number) e o tamanho
+        # para diagnóstico real, em vez de só "não foi possível processar".
+        header = image_bytes[:16].hex()
         raise VisionAnalysisError(
-            f"Não foi possível processar a imagem enviada: {e}"
+            f"Não foi possível processar a imagem enviada ({len(image_bytes)} "
+            f"bytes, assinatura hex: {header}): {e}"
         ) from e
 
 

@@ -41,7 +41,11 @@ async function proxy(request: NextRequest, path: string[]): Promise<NextResponse
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.text();
+    // IMPORTANTE: usar arrayBuffer(), nunca text(). O corpo de um upload
+    // multipart (imagem) contém bytes binários que não são UTF-8 válido —
+    // convertê-los para string e de volta corrompe a imagem, fazendo o
+    // Pillow no backend falhar com "cannot identify image file".
+    init.body = await request.arrayBuffer();
   }
 
   const backendResponse = await fetch(targetUrl, init);
