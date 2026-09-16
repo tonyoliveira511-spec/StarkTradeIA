@@ -5,11 +5,11 @@ from app.ai.technical_consolidation import build_sub_scores, suggest_expiry
 def _extraction(**overrides) -> VisionExtraction:
     defaults = dict(
         timeframe_label="15m", asset="EUR/USD", detected_timeframe="15m",
-        current_price="1.6000", trend="NÃO DISPONÍVEL", structure_sequence="NÃO DISPONÍVEL",
-        support_zone="NÃO DISPONÍVEL", resistance_zone="NÃO DISPONÍVEL",
-        momentum="NÃO DISPONÍVEL", rsi_reading="NÃO DISPONÍVEL", macd_reading="NÃO DISPONÍVEL",
-        bollinger_reading="NÃO DISPONÍVEL", price_action_pattern="NÃO DISPONÍVEL",
-        notes="NÃO DISPONÍVEL",
+        current_price="1.6000", trend="NAO_DISPONIVEL", structure_sequence="NAO_DISPONIVEL",
+        support_zone="NAO_DISPONIVEL", resistance_zone="NAO_DISPONIVEL",
+        momentum="NAO_DISPONIVEL", rsi_reading="NAO_DISPONIVEL", macd_reading="NAO_DISPONIVEL",
+        bollinger_reading="NAO_DISPONIVEL", price_action_pattern="NAO_DISPONIVEL",
+        notes="NAO_DISPONIVEL",
     )
     defaults.update(overrides)
     return VisionExtraction(**defaults)

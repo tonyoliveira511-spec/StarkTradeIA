@@ -5,7 +5,7 @@ já existente, e produz uma sugestão de expiração puramente técnica
 (sem estatística/ML — isso é o item 10/15 do briefing: nesta fase é
 análise de confluência, não probabilidade calibrada).
 
-Princípio de design: cada campo ausente ("NÃO DISPONÍVEL") contribui 0
+Princípio de design: cada campo ausente (NOT_AVAILABLE) contribui 0
 (neutro) para o sub-score correspondente — nunca é preenchido com um
 palpite. Isso é o que torna AGUARDAR um resultado honesto quando a
 imagem não tem informação suficiente, em vez de forçar uma direção.
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.ai.vision_analysis import VisionExtraction
+from app.ai.vision_analysis import NOT_AVAILABLE, VisionExtraction
 from app.signal_engine.engine import SubScores
 
 TREND_SCORES = {
@@ -41,7 +41,7 @@ def _momentum_score(momentum: str) -> float:
 
 
 def _structure_score(sequence: str) -> float:
-    if sequence.strip().upper() == "NÃO DISPONÍVEL":
+    if sequence.strip().upper() == NOT_AVAILABLE:
         return 0.0
     tokens = [t.strip().upper() for t in sequence.split(",") if t.strip()]
     if not tokens:
@@ -55,7 +55,7 @@ def _structure_score(sequence: str) -> float:
 
 
 def _rsi_score(rsi_reading: str) -> float:
-    if rsi_reading.strip().upper() == "NÃO DISPONÍVEL":
+    if rsi_reading.strip().upper() == NOT_AVAILABLE:
         return 0.0
     try:
         value = float(rsi_reading.replace(",", ".").strip())
@@ -70,7 +70,7 @@ def _rsi_score(rsi_reading: str) -> float:
 
 def _macd_score(macd_reading: str) -> float:
     text = macd_reading.strip().upper()
-    if text == "NÃO DISPONÍVEL":
+    if text == NOT_AVAILABLE:
         return 0.0
     if "ALTA" in text or "CRUZAMENTO POSITIVO" in text or "BULLISH" in text:
         return 50
@@ -81,7 +81,7 @@ def _macd_score(macd_reading: str) -> float:
 
 def _bollinger_score(bollinger_reading: str) -> float:
     text = bollinger_reading.strip().upper()
-    if text == "NÃO DISPONÍVEL":
+    if text == NOT_AVAILABLE:
         return 0.0
     if "BANDA SUPERIOR" in text:
         return -30
@@ -92,7 +92,7 @@ def _bollinger_score(bollinger_reading: str) -> float:
 
 def _price_action_score(pattern: str) -> float:
     text = pattern.strip().upper()
-    if text == "NÃO DISPONÍVEL":
+    if text == NOT_AVAILABLE:
         return 0.0
     if any(k in text for k in ("ENGULFING DE ALTA", "PIN BAR DE ALTA", "MARTELO")):
         return 60
@@ -103,7 +103,7 @@ def _price_action_score(pattern: str) -> float:
 
 def _support_resistance_score(extraction: VisionExtraction) -> float:
     notes = extraction.notes.strip().upper()
-    if notes == "NÃO DISPONÍVEL":
+    if notes == NOT_AVAILABLE:
         return 0.0
     if "REJEIÇÃO DE RESISTÊNCIA" in notes or "REJEIÇÃO DA RESISTÊNCIA" in notes:
         return -50

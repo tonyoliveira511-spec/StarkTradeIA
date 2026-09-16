@@ -30,7 +30,7 @@ from PIL import Image
 
 logger = logging.getLogger("vision_analysis")
 
-NOT_AVAILABLE = "NÃO DISPONÍVEL"
+NOT_AVAILABLE = "NAO_DISPONIVEL"
 
 # Modelo multimodal atual do Google AI Studio. NOTA: o Google descontinua
 # versões de modelo com alguma frequência para contas novas (aconteceu com
@@ -46,44 +46,30 @@ velas (candlestick) de uma plataforma de operações digitais/binárias.
 REGRA ABSOLUTA: você NUNCA deve inventar, estimar ou "chutar" um valor que \
 não esteja claramente visível na imagem. Se um dado não puder ser \
 determinado com confiança a partir do que está desenhado no gráfico, \
-retorne exatamente a string "NÃO DISPONÍVEL" para aquele campo — nunca um \
-número ou classificação inventados.
+retorne exatamente a string "NAO_DISPONIVEL" (sem acentos) para aquele \
+campo — nunca um número ou classificação inventados.
 
-Analise a imagem a seguir e preencha os campos do schema fornecido.
-"""
+Responda SOMENTE com um JSON válido, sem markdown, sem crases, sem texto \
+antes ou depois — apenas o objeto JSON puro, no formato exato abaixo:
 
-# Schema estrito: o Gemini é forçado a preencher exatamente estes campos,
-# todos como string (para permitir o valor sentinela "NÃO DISPONÍVEL"
-# mesmo em campos conceitualmente numéricos, como current_price/rsi_reading).
-RESPONSE_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "asset": {"type": "STRING"},
-        "timeframe": {"type": "STRING"},
-        "current_price": {"type": "STRING"},
-        "trend": {
-            "type": "STRING",
-            "enum": ["FORTE_ALTA", "ALTA", "LATERAL", "BAIXA", "FORTE_BAIXA", NOT_AVAILABLE],
-        },
-        "structure_sequence": {"type": "STRING"},
-        "support_zone": {"type": "STRING"},
-        "resistance_zone": {"type": "STRING"},
-        "momentum": {
-            "type": "STRING",
-            "enum": ["COMPRADORA", "VENDEDORA", "NEUTRA", NOT_AVAILABLE],
-        },
-        "rsi_reading": {"type": "STRING"},
-        "macd_reading": {"type": "STRING"},
-        "bollinger_reading": {"type": "STRING"},
-        "price_action_pattern": {"type": "STRING"},
-        "notes": {"type": "STRING"},
-    },
-    "required": [
-        "asset", "timeframe", "current_price", "trend", "structure_sequence",
-        "support_zone", "resistance_zone", "momentum", "rsi_reading",
-        "macd_reading", "bollinger_reading", "price_action_pattern", "notes",
-    ],
+{
+  "asset": "string ou NAO_DISPONIVEL",
+  "timeframe": "string ou NAO_DISPONIVEL",
+  "current_price": "número como string ou NAO_DISPONIVEL",
+  "trend": "FORTE_ALTA | ALTA | LATERAL | BAIXA | FORTE_BAIXA | NAO_DISPONIVEL",
+  "structure_sequence": "sequência como 'HH,HL,LH,LL' na ordem observada, ou NAO_DISPONIVEL",
+  "support_zone": "faixa de preço como string, ou NAO_DISPONIVEL",
+  "resistance_zone": "faixa de preço como string, ou NAO_DISPONIVEL",
+  "momentum": "COMPRADORA | VENDEDORA | NEUTRA | NAO_DISPONIVEL",
+  "rsi_reading": "valor visível do RSI, ou NAO_DISPONIVEL",
+  "macd_reading": "estado do MACD se visível, ou NAO_DISPONIVEL",
+  "bollinger_reading": "estado das Bandas de Bollinger se visíveis, ou NAO_DISPONIVEL",
+  "price_action_pattern": "padrão de candle relevante, ou NAO_DISPONIVEL",
+  "notes": "observações adicionais em texto livre, ou NAO_DISPONIVEL"
 }
+
+Analise a imagem a seguir:
+"""
 
 
 @dataclass(frozen=True)
@@ -186,10 +172,6 @@ class ImageAnalysisProvider:
                     EXTRACTION_PROMPT,
                     types.Part.from_bytes(data=normalized_bytes, mime_type="image/png"),
                 ],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=RESPONSE_SCHEMA,
-                ),
             )
         except Exception as e:
             logger.error("Falha ao chamar a API do Gemini: %s", e)
@@ -198,6 +180,13 @@ class ImageAnalysisProvider:
         raw_text = (response.text or "").strip()
         if not raw_text:
             raise VisionAnalysisError("O Gemini retornou uma resposta vazia.")
+
+        # Tolerância a blocos markdown (```json ... ```), caso o modelo
+        # envolva a resposta apesar da instrução de não fazer isso.
+        if raw_text.startswith("```"):
+            raw_text = raw_text.strip("`")
+            if raw_text.lower().startswith("json"):
+                raw_text = raw_text[4:].strip()
 
         try:
             data = json.loads(raw_text)

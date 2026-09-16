@@ -37,6 +37,11 @@ interface AnalyzeResponse {
   extractions: ExtractionResult[];
 }
 
+const SENTINEL = "NAO_DISPONIVEL";
+function display(value: string): string {
+  return value === SENTINEL ? "Não disponível" : value;
+}
+
 const MAX_IMAGES = 3;
 
 export default function DashboardPage() {
@@ -219,13 +224,13 @@ export default function DashboardPage() {
               {result.extractions.map((ex, i) => (
                 <div key={i} className="text-xs text-gray-400 border-t border-panelBorder pt-2">
                   <div className="text-gray-300 font-medium mb-1">
-                    {ex.timeframe_label} {ex.asset !== "NÃO DISPONÍVEL" && `— ${ex.asset}`}
+                    {ex.timeframe_label} {ex.asset !== "NAO_DISPONIVEL" && `— ${ex.asset}`}
                   </div>
-                  <div>Tendência: {ex.trend}</div>
-                  <div>Estrutura: {ex.structure_sequence}</div>
-                  <div>Momentum: {ex.momentum}</div>
-                  <div>Suporte: {ex.support_zone} · Resistência: {ex.resistance_zone}</div>
-                  {ex.notes !== "NÃO DISPONÍVEL" && <div>Notas: {ex.notes}</div>}
+                  <div>Tendência: {display(ex.trend)}</div>
+                  <div>Estrutura: {display(ex.structure_sequence)}</div>
+                  <div>Momentum: {display(ex.momentum)}</div>
+                  <div>Suporte: {display(ex.support_zone)} · Resistência: {display(ex.resistance_zone)}</div>
+                  {ex.notes !== "NAO_DISPONIVEL" && <div>Notas: {ex.notes}</div>}
                 </div>
               ))}
             </div>
