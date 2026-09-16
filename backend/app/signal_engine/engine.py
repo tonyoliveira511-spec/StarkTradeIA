@@ -83,7 +83,18 @@ def compute_signal(
     sub_scores: SubScores,
     config: SignalConfig,
     data_quality: DataQuality,
+    active_factors: dict[str, bool] | None = None,
 ) -> SignalResult:
+    """
+    `active_factors`: quando fornecido, indica quais fatores tinham dado
+    de origem disponível (não "não disponível" na extração). Fatores
+    inativos são zerados e o peso deles é redistribuído proporcionalmente
+    entre os fatores ativos, em vez de simplesmente contar como 0 e
+    reduzir o teto máximo de confiança alcançável. Sem isso, uma fonte de
+    dados que estruturalmente nunca preenche certos campos (ex: screenshot
+    sem RSI/MACD plotados) faria o sistema nunca atingir confiança alta
+    mesmo com confluência perfeita nos fatores que a imagem realmente mostra.
+    """
     config.weights.validate()
 
     if data_quality != DataQuality.EXCELLENT and data_quality != config.min_data_quality:
@@ -94,20 +105,38 @@ def compute_signal(
             reasons=[f"Qualidade de dados insuficiente: {data_quality.value}"],
         )
 
-    w = config.weights
+    w = config.weights.as_dict()
+    if active_factors:
+        active_weight_sum = sum(w[k] for k, active in active_factors.items() if active)
+        if active_weight_sum > 0:
+            w = {
+                k: (w[k] / active_weight_sum if active_factors.get(k, True) else 0.0)
+                for k in w
+            }
+        # Se nenhum fator estiver ativo, mantém os pesos originais — o
+        # score vai sair 0 de qualquer forma (todos os sub_scores serão 0).
+
     weighted_sum = (
-        sub_scores.trend * w.trend
-        + sub_scores.structure * w.structure
-        + sub_scores.support_resistance * w.support_resistance
-        + sub_scores.momentum * w.momentum
-        + sub_scores.rsi * w.rsi
-        + sub_scores.macd * w.macd
-        + sub_scores.volatility * w.volatility
-        + sub_scores.price_action * w.price_action
+        sub_scores.trend * w["trend"]
+        + sub_scores.structure * w["structure"]
+        + sub_scores.support_resistance * w["support_resistance"]
+        + sub_scores.momentum * w["momentum"]
+        + sub_scores.rsi * w["rsi"]
+        + sub_scores.macd * w["macd"]
+        + sub_scores.volatility * w["volatility"]
+        + sub_scores.price_action * w["price_action"]
     )
 
     confidence = abs(weighted_sum)
     reasons: list[str] = []
+
+    if active_factors:
+        inactive = [k for k, active in active_factors.items() if not active]
+        if inactive:
+            reasons.append(
+                f"Fatores sem dado suficiente na imagem ({', '.join(inactive)}) "
+                "tiveram peso redistribuído entre os demais."
+            )
 
     if confidence < config.min_score_to_trade:
         reasons.append(

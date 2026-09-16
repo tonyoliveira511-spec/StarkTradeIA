@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.ai.price_parsing import parse_price, parse_zone
 from app.ai.vision_analysis import NOT_AVAILABLE, VisionExtraction
 from app.signal_engine.engine import SubScores
 
@@ -102,13 +103,43 @@ def _price_action_score(pattern: str) -> float:
 
 
 def _support_resistance_score(extraction: VisionExtraction) -> float:
-    notes = extraction.notes.strip().upper()
-    if notes == NOT_AVAILABLE:
+    """Score de proximidade a suporte/resistência, baseado no preço atual
+    e nas zonas extraídas — não em palavra-chave no campo de notas livre
+    (isso raramente disparava, deixando esse fator quase sempre em 0
+    mesmo quando a imagem tinha os dados necessários).
+
+    Preço perto da resistência → viés de baixa (potencial rejeição).
+    Preço perto do suporte → viés de alta (potencial rejeição).
+    """
+    price = parse_price(extraction.current_price)
+    support = parse_zone(extraction.support_zone)
+    resistance = parse_zone(extraction.resistance_zone)
+
+    if price is None or (support is None and resistance is None):
         return 0.0
-    if "REJEIÇÃO DE RESISTÊNCIA" in notes or "REJEIÇÃO DA RESISTÊNCIA" in notes:
-        return -50
-    if "REJEIÇÃO DE SUPORTE" in notes or "REJEIÇÃO DO SUPORTE" in notes:
-        return 50
+
+    support_mid = (support[0] + support[1]) / 2 if support else None
+    resistance_mid = (resistance[0] + resistance[1]) / 2 if resistance else None
+
+    if support_mid is not None and resistance_mid is not None:
+        dist_to_support = abs(price - support_mid)
+        dist_to_resistance = abs(price - resistance_mid)
+        total = dist_to_support + dist_to_resistance
+        if total == 0:
+            return 0.0
+        # Positivo quando mais perto do suporte (viés de alta), negativo
+        # quando mais perto da resistência (viés de baixa).
+        return ((dist_to_resistance - dist_to_support) / total) * 100
+
+    # Só uma zona disponível: usa distância relativa ao preço como proxy
+    # de força do viés (mais perto = sinal mais forte), com um teto para
+    # não deixar o score explodir quando a zona está muito próxima.
+    if support_mid is not None:
+        gap = abs(price - support_mid) / max(price, 1e-9)
+        return max(0.0, 60 - gap * 1000)  # decai conforme se afasta do suporte
+    if resistance_mid is not None:
+        gap = abs(price - resistance_mid) / max(price, 1e-9)
+        return -max(0.0, 60 - gap * 1000)  # decai conforme se afasta da resistência
     return 0.0
 
 
@@ -141,7 +172,13 @@ def _assign_roles(extractions: list[VisionExtraction]) -> list[TimeframeWeight]:
     ]
 
 
-def build_sub_scores(extractions: list[VisionExtraction]) -> tuple[SubScores, float]:
+def _is_available(text: str) -> bool:
+    return text.strip().upper() != NOT_AVAILABLE
+
+
+def build_sub_scores(
+    extractions: list[VisionExtraction],
+) -> tuple[SubScores, float, dict[str, bool]]:
     if not extractions:
         raise ValueError("Nenhuma extração fornecida")
 
@@ -174,7 +211,27 @@ def build_sub_scores(extractions: list[VisionExtraction]) -> tuple[SubScores, fl
     )
 
     avg_availability = sum(e.availability_ratio() for e in extractions) / len(extractions)
-    return sub_scores, avg_availability
+
+    # Um fator é "ativo" se PELO MENOS UMA das extrações usadas tinha o
+    # dado de origem necessário para calculá-lo — usado pelo Signal Engine
+    # para renormalizar pesos em vez de deixar fatores estruturalmente
+    # ausentes (ex: RSI não plotado na Quotex) diluírem o teto de confiança.
+    active_factors = {
+        "trend": any(_is_available(e.trend) for e in extractions),
+        "structure": any(_is_available(e.structure_sequence) for e in extractions),
+        "support_resistance": any(
+            parse_price(e.current_price) is not None
+            and (parse_zone(e.support_zone) is not None or parse_zone(e.resistance_zone) is not None)
+            for e in extractions
+        ),
+        "momentum": any(_is_available(e.momentum) for e in extractions),
+        "rsi": any(_is_available(e.rsi_reading) for e in extractions),
+        "macd": any(_is_available(e.macd_reading) for e in extractions),
+        "volatility": any(_is_available(e.bollinger_reading) for e in extractions),
+        "price_action": any(_is_available(e.price_action_pattern) for e in extractions),
+    }
+
+    return sub_scores, avg_availability, active_factors
 
 
 def suggest_expiry(sub_scores: SubScores, confidence: float) -> tuple[int, str]:

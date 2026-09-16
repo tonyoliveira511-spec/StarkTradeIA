@@ -1,4 +1,5 @@
-from app.ai.entry_engine import compute_entry, pick_entry_extraction, _parse_zone
+from app.ai.entry_engine import compute_entry, pick_entry_extraction
+from app.ai.price_parsing import parse_zone as _parse_zone
 from app.ai.vision_analysis import VisionExtraction
 from app.signal_engine.engine import Direction
 

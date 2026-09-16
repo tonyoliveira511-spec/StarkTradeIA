@@ -11,27 +11,12 @@ extração, não inventamos uma — retornamos None nesse campo.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Optional
 
-from app.ai.vision_analysis import NOT_AVAILABLE, VisionExtraction
+from app.ai.price_parsing import parse_zone
+from app.ai.vision_analysis import VisionExtraction
 from app.signal_engine.engine import Direction
-
-_NUMBER_RE = re.compile(r"\d+[.,]\d+")
-
-
-def _parse_zone(text: str) -> Optional[tuple[float, float]]:
-    """Extrai um intervalo de preço de uma string como '111.193 - 111.200'.
-    Se só houver um número, trata como um único ponto (low == high)."""
-    if text.strip().upper() == NOT_AVAILABLE:
-        return None
-    numbers = [float(n.replace(",", ".")) for n in _NUMBER_RE.findall(text)]
-    if len(numbers) >= 2:
-        return (min(numbers[0], numbers[1]), max(numbers[0], numbers[1]))
-    if len(numbers) == 1:
-        return (numbers[0], numbers[0])
-    return None
 
 
 @dataclass(frozen=True)
@@ -49,7 +34,7 @@ def compute_entry(direction: Direction, extraction: VisionExtraction) -> Optiona
         return None
 
     if direction == Direction.CALL:
-        zone = _parse_zone(extraction.support_zone)
+        zone = parse_zone(extraction.support_zone)
         if zone is None:
             return None
         low, high = zone
@@ -61,7 +46,7 @@ def compute_entry(direction: Direction, extraction: VisionExtraction) -> Optiona
         )
 
     # PUT
-    zone = _parse_zone(extraction.resistance_zone)
+    zone = parse_zone(extraction.resistance_zone)
     if zone is None:
         return None
     low, high = zone

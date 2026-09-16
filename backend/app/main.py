@@ -101,10 +101,12 @@ async def analyze(
         *(analyze_one(image, tf) for image, tf in zip(images, timeframes))
     )
 
-    sub_scores, availability = build_sub_scores(extractions)
+    sub_scores, availability, active_factors = build_sub_scores(extractions)
 
     config = SignalConfig()
-    signal = compute_signal(sub_scores, config, data_quality=DataQuality.EXCELLENT)
+    signal = compute_signal(
+        sub_scores, config, data_quality=DataQuality.EXCELLENT, active_factors=active_factors
+    )
 
     expiry_minutes, expiry_reason = suggest_expiry(sub_scores, availability)
 
