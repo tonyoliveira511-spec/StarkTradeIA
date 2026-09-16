@@ -18,6 +18,7 @@ confiável do que só pedir "responda em JSON" no texto do prompt.
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from typing import Optional
 
 from google import genai
 from google.genai import types
+from PIL import Image
 
 logger = logging.getLogger("vision_analysis")
 
@@ -122,6 +124,27 @@ class VisionAnalysisError(RuntimeError):
     pass
 
 
+def _normalize_image(image_bytes: bytes) -> bytes:
+    """Reabre a imagem e reexporta como PNG RGB puro.
+
+    Corrige a causa mais comum do erro genérico "Unable to process input
+    image" da API do Gemini: perfis de cor não-RGB (CMYK), canal alpha
+    incomum, metadados EXIF/ICC embutidos por certas ferramentas de
+    captura de tela, ou variações de WebP que a API não decodifica bem.
+    Reexportar como PNG RGB elimina essas variações antes de enviar.
+    """
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            rgb_img = img.convert("RGB")
+            buffer = io.BytesIO()
+            rgb_img.save(buffer, format="PNG")
+            return buffer.getvalue()
+    except Exception as e:
+        raise VisionAnalysisError(
+            f"Não foi possível processar a imagem enviada: {e}"
+        ) from e
+
+
 class ImageAnalysisProvider:
     """Fonte de dados baseada em screenshot — implementa o mesmo papel
     conceitual de um MarketDataProvider (fornecer dados de mercado para o
@@ -140,12 +163,14 @@ class ImageAnalysisProvider:
         A imagem só existe neste escopo de função — não é salva em nenhum
         lugar antes ou depois desta chamada.
         """
+        normalized_bytes = _normalize_image(image_bytes)
+
         try:
             response = await self._client.aio.models.generate_content(
                 model=VISION_MODEL,
                 contents=[
                     EXTRACTION_PROMPT,
-                    types.Part.from_bytes(data=image_bytes, mime_type=media_type),
+                    types.Part.from_bytes(data=normalized_bytes, mime_type="image/png"),
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
