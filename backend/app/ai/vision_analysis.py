@@ -30,10 +30,12 @@ logger = logging.getLogger("vision_analysis")
 
 NOT_AVAILABLE = "NÃO DISPONÍVEL"
 
-# Gemini 2.5 Flash: modelo multimodal disponível no free tier do Google
-# AI Studio (sem cartão de crédito, sem expiração — ver docs/ARCHITECTURE.md
-# para a comparação de custo que motivou essa escolha).
-VISION_MODEL = "gemini-2.5-flash"
+# Modelo multimodal atual do Google AI Studio. NOTA: o Google descontinua
+# versões de modelo com alguma frequência para contas novas (aconteceu com
+# o gemini-2.5-flash, usado na primeira versão deste arquivo). Se este
+# modelo também for descontinuado no futuro, o próprio erro da API
+# geralmente informa o nome do substituto recomendado — atualizar aqui.
+VISION_MODEL = "gemini-3.6-flash"
 
 EXTRACTION_PROMPT = """\
 Você é um analista técnico extraindo dados de um screenshot de gráfico de \

@@ -96,7 +96,23 @@ plotados, zonas de preço). Isso não foi validado contra screenshots reais
 da Quotex ainda — validar com casos reais é o próximo passo lógico antes
 de confiar no sinal para qualquer decisão.
 
-## Atualização — Vision AI trocada de Claude para Gemini
+## Atualização — modelo descontinuado, troca para gemini-3.6-flash
+
+Ao testar em produção, a API retornou 404 informando que `gemini-2.5-flash`
+não está mais disponível para contas novas, recomendando `gemini-3.6-flash`
+— já aplicado em `VISION_MODEL`. Isso é um lembrete prático: nomes de
+modelo de APIs de terceiros mudam com o tempo (risco menor e mais bem
+sinalizado do que a fragilidade da Quotex, já que aqui a própria API
+informa o substituto no erro, mas ainda exige atenção periódica).
+
+Correção sobre o free tier: diferente do que foi dito inicialmente, o
+free tier do Google AI Studio para modelos Flash não tem garantia de
+permanência incondicional — é explicitamente descrito pela documentação
+mais recente como "rate-limited, para prototipagem", com cotas que podem
+mudar a qualquer momento. Continua sendo gratuito e sem cartão de crédito
+para o volume de uso esperado nesta fase de validação, mas não deve ser
+tratado como uma garantia de custo zero permanente em produção com volume
+maior.
 
 Motivo: reduzir custo operacional na fase de validação do MVP. O Google
 AI Studio oferece free tier permanente (sem cartão, sem expiração) para o
