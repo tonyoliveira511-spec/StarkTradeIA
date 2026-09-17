@@ -137,3 +137,36 @@ Mudança de implementação:
   mudou — o resto do sistema (`technical_consolidation.py`, `main.py`)
   não precisou de nenhuma alteração além de trocar o nome da variável de
   configuração.
+
+## Captura de tela ao vivo (getDisplayMedia)
+
+Alternativa ao upload manual: o usuário compartilha a aba/janela da Quotex
+via `navigator.mediaDevices.getDisplayMedia` (API padrão do navegador,
+mesma usada em compartilhamento de tela de videochamada). O frontend
+captura frames periodicamente de um `<video>`/`<canvas>` em memória e
+envia para o mesmo endpoint `/api/analyze` — nenhuma credencial da Quotex
+é usada, nenhuma engenharia reversa, nenhum frame é persistido em disco.
+
+**Por que isso não esbarra na mesma limitação do QuotexAdapter**: same-
+origin policy impede um site de ler o DOM/pixels de outro site
+diretamente (ex: via iframe), mas captura de tela é uma permissão que o
+próprio usuário concede explicitamente pelo seletor nativo do navegador —
+mecanismo diferente, sem tocar em nenhuma API não-oficial da corretora.
+
+**Atenção à cota do Gemini free tier**: captura automática a cada 15-30s
+consome chamadas rapidamente. Uma sessão de 1h a cada 30s = 120
+chamadas — dentro do limite diário de a maioria dos modelos Flash, mas
+várias sessões no mesmo dia podem esgotar a cota (reset à meia-noite
+Pacífico). O intervalo padrão é 30s; o usuário pode ajustar para 60s ou
+desligar a análise automática e usar "Analisar agora" manualmente.
+
+**Limitações conhecidas**:
+- Depende de suporte do navegador a `getDisplayMedia` (funciona em
+  Chrome/Edge/Firefox desktop; suporte limitado ou ausente em navegadores
+  mobile, especialmente Safari iOS).
+- Exige HTTPS (funciona em produção via Vercel; não funciona em
+  `http://localhost` sem flags especiais, exceto que a maioria dos
+  navegadores trata localhost como contexto seguro).
+- Se o usuário parar o compartilhamento pelo controle nativo do
+  navegador (não pelo botão "Parar" do StarkTrade), o evento `ended` da
+  track é escutado para encerrar o estado corretamente.
